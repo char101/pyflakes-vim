@@ -33,6 +33,7 @@ if !exists('g:pyflakes_use_quickfix')
     let g:pyflakes_use_quickfix = 1
 endif
 
+sign define pyflakes text=► texthl=WarningMsg
 
     python << EOF
 import vim
@@ -233,6 +234,8 @@ if !exists("*s:RunPyflakes")
         let b:qf_window_count = -1
         
         python << EOF
+
+error_lines = set()
 for w in check(vim.current.buffer):
     vim.command('let s:matchDict = {}')
     vim.command("let s:matchDict['lineNum'] = " + str(w.lineno))
@@ -256,9 +259,38 @@ for w in check(vim.current.buffer):
 
         vim.command("let l:qf_item.vcol = 1")
         vim.command("let l:qf_item.col = %s" % str(w.col + 1))
+    
+    error_lines.add(int(w.lineno))
 
     vim.command("call add(b:matched, s:matchDict)")
     vim.command("call add(b:qf_list, l:qf_item)")
+
+
+# SIGNS
+    
+# Get current signs
+vim.command("redir => b:pyflakes_output")
+vim.command("silent exe 'sign place file='.expand('%:p')")
+vim.command("redir END")
+sign_re = re.compile(r"line=(\d+)\s+id=(\d+)")
+current_signs = {} # lineno:int -> sign_id: str
+used_ids = set() # sign_id: int
+for match in sign_re.finditer(vim.eval("b:pyflakes_output")):
+    current_signs[int(match.group(1))] = match.group(2)
+    used_ids.add(int(match.group(2)))
+vim.command("unlet b:pyflakes_output")
+    
+sign_id = 1000
+for lineno in error_lines:
+    if lineno not in current_signs:
+        sign_id += 1
+        while sign_id in used_ids:
+            sign_id += 1
+        vim.command("exe 'sign place %d line=%d name=pyflakes file='.expand('%%:p')" % (sign_id, lineno))
+for lineno in current_signs:
+    if lineno not in error_lines:
+        vim.command("exe 'sign unplace %s file='.expand('%%:p')" % current_signs[lineno])
+
 EOF
         if g:pyflakes_use_quickfix == 1
             if exists("s:pyflakes_qf")
